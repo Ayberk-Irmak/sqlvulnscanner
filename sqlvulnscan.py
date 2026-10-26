@@ -1,8 +1,38 @@
 import argparse
 import concurrent.futures
+import sys
+import urllib.parse
+
 import requests
 from bs4 import BeautifulSoup
-import urllib.parse
+
+BANNER = """
+================================================================
+ SQL Dork Scanner  -  AUTHORIZED SECURITY TESTING ONLY
+----------------------------------------------------------------
+ Scanning systems you do not own or are not explicitly
+ authorized to test is illegal in most jurisdictions. By
+ continuing you confirm you have written permission to test
+ every target this tool reaches.
+================================================================
+"""
+
+
+def confirm_authorization(assume_yes: bool) -> None:
+    """Gate execution behind an explicit authorization acknowledgement."""
+    print(BANNER)
+    if assume_yes:
+        print("[authorization acknowledged via --authorized]\n")
+        return
+    try:
+        answer = input("Do you have written authorization for ALL targets? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    if answer not in ("y", "yes"):
+        print("Authorization not confirmed. Aborting.")
+        sys.exit(1)
+    print()
+
 
 def search_bing(dork, num_pages):
     urls = []
@@ -19,9 +49,10 @@ def search_bing(dork, num_pages):
                 urls.append(url)
     return urls
 
+
 def process_url(url):
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         if "error in your SQL syntax" in response.text:
             print(f"Potential SQL vulnerability found: {url}")
         else:
@@ -29,13 +60,18 @@ def process_url(url):
     except requests.RequestException as e:
         print(f"Failed to process {url}: {e}")
 
+
 def main():
-    parser = argparse.ArgumentParser(description="SQL Dork Scanner")
+    parser = argparse.ArgumentParser(description="SQL Dork Scanner (authorized testing only)")
     parser.add_argument("-d", "--dork", type=str, required=True, help="Dork query")
     parser.add_argument("-e", "--engine", type=str, choices=["google", "bing"], required=True, help="Search engine")
     parser.add_argument("-p", "--pages", type=int, default=1, help="Number of pages to fetch")
     parser.add_argument("-t", "--threads", type=int, default=1, help="Number of threads to use")
+    parser.add_argument("--authorized", action="store_true",
+                        help="Confirm non-interactively that you are authorized to test every target")
     args = parser.parse_args()
+
+    confirm_authorization(args.authorized)
 
     dork = args.dork
     engine = args.engine
@@ -57,6 +93,7 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         executor.map(process_url, urls)
+
 
 if __name__ == "__main__":
     main()
